@@ -90,7 +90,7 @@ def main():
     query.add_argument('-p', '--parallel', default=32, type=int, help='Number of request to do in parallel')
     query.add_argument('-d', '--directory', default='.', help='Directory to save result listings to')
     query.add_argument('-v', '--verbose', action='count', help='Print detailed info during run')
-    query.add_argument('-c', '--profile', help='Use a specific .aws/credentials profile.')
+    query.add_argument('-c', '--profile', default=os.environ.get('AWS_PROFILE'), help='Use a specific .aws/credentials profile.')
 
     # Once you have queried, show is the next most important command. So it comes second
     show = subparsers.add_parser(
