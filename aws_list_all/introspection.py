@@ -475,32 +475,32 @@ def get_listing_operations(service, region=None, selected_operations=(), profile
     return operations
 
 
-def recreate_caches(update_packaged_values):
-    get_endpoint_hosts.recalculate()
-    get_service_regions.recalculate()
+def recreate_caches(update_packaged_values, partition='aws', profile='default'):
+    get_endpoint_hosts.recalculate(partition=partition, profile=profile)
+    get_service_regions.recalculate(partition=partition, profile=profile)
 
     if update_packaged_values:
         print('Updating packaged values at:')
 
         endpoint_hosts_packaged_json = resource_filename(__package__, 'endpoint_hosts.json')
         print(' *', endpoint_hosts_packaged_json)
-        dump(get_endpoint_hosts(), open(endpoint_hosts_packaged_json, 'w'), sort_keys=True, indent=4)
+        dump(get_endpoint_hosts(partition=partition, profile=profile), open(endpoint_hosts_packaged_json, 'w'), sort_keys=True, indent=4)
 
         service_regions_packaged_json = resource_filename(__package__, 'service_regions.json')
         print(' *', service_regions_packaged_json)
-        dump(get_service_regions(), open(service_regions_packaged_json, 'w'), sort_keys=True, indent=4)
+        dump(get_service_regions(partition=partition, profile=profile), open(service_regions_packaged_json, 'w'), sort_keys=True, indent=4)
 
 
-def packaged_endpoint_hosts():
+def packaged_endpoint_hosts(partition='aws', profile='default'):
     return load(resource_stream(__package__, 'endpoint_hosts.json'))
 
 
 @cache('endpoint_hosts', vary={'boto3_version': boto3.__version__}, cheap_default_func=packaged_endpoint_hosts)
-def get_endpoint_hosts():
-    print('Extracting endpoint list from boto3 version {} ...'.format(boto3.__version__))
+def get_endpoint_hosts(partition='aws', profile='default'):
+    print('Extracting endpoint list from boto3 version {} for partition {}...'.format(boto3.__version__, partition))
 
-    EC2_REGIONS = set(boto3.Session().get_available_regions('ec2'))
-    S3_REGIONS = set(boto3.Session().get_available_regions('s3'))
+    EC2_REGIONS = set(boto3.Session(profile_name=profile).get_available_regions('ec2', partition_name=partition))
+    S3_REGIONS = set(boto3.Session(profile_name=profile).get_available_regions('s3', partition_name=partition))
     ALL_REGIONS = sorted(EC2_REGIONS | S3_REGIONS)
     ALL_SERVICES = get_services()
 
@@ -540,16 +540,19 @@ def get_endpoint_ip(service_region_hosts):
         try:
             result = gethostbyname(host.split('/')[2])
         except gaierror as ex:
-            if ex.errno != -5:  # -5 is "No address associated with hostname"
+            if ex.errno not in [
+                -5,  # -5 is "No address associated with hostname"
+                -2,  # -2 is "Name or service not known"
+            ]:
                 raise
         if result:
             break
     return (service, region, result)
 
 
-def get_service_region_ip_in_dns():
+def get_service_region_ip_in_dns(partition='aws', profile='default'):
     service_region_hosts = {}
-    for service, region_hosts in get_endpoint_hosts().items():
+    for service, region_hosts in get_endpoint_hosts(partition=partition, profile=profile).items():
         for region, hosts in region_hosts.items():
             service_region_hosts[(service, region)] = hosts
     print('Resolving endpoint IPs to find active endpoints...')
@@ -558,37 +561,37 @@ def get_service_region_ip_in_dns():
     return result
 
 
-def packaged_service_regions():
+def packaged_service_regions(partition='aws', profile='default'):
     return load(resource_stream(__package__, 'service_regions.json'))
 
 
 @cache('service_regions', vary={'boto3_version': boto3.__version__}, cheap_default_func=packaged_service_regions)
-def get_service_regions():
+def get_service_regions(partition='aws', profile='default'):
     service_regions = {}
-    for service, region, ip in get_service_region_ip_in_dns():
+    for service, region, ip in get_service_region_ip_in_dns(partition=partition, profile=profile):
         service_regions.setdefault(service, set())
         if ip is not None:
             service_regions[service].add(region)
     return {service: sorted(list(regions)) for service, regions in service_regions.items()}
 
 
-def get_regions_for_service(requested_service, requested_regions=()):
+def get_regions_for_service(requested_service, requested_regions=(), partition='aws', profile='default'):
     """Given a service name, return a list of region names where this service can have resources,
     restricted by a possible set of regions."""
     if requested_service in ('iam', 'cloudfront', 's3', 'route53'):
         return [None]
-    regions = set(get_service_regions().get(requested_service, []))
+    regions = set(get_service_regions(partition=partition, profile=profile).get(requested_service, []))
     return list(regions) if not requested_regions else list(sorted(set(regions) & set(requested_regions)))
 
 
-def introspect_regions_for_service():
+def introspect_regions_for_service(partition='aws', profile='default'):
     """Introspect and compare guessed and boto3-defined regions"""
     print('Comparing service/region pairs reported by boto3 and found via DNS queries')
     print('=' * 100)
-    guessed_regions = get_service_regions()
+    guessed_regions = get_service_regions(partition=partition, profile=profile)
     m = defaultdict(set)
     for service, guessed in sorted(guessed_regions.items()):
-        reported = boto3.Session().get_available_regions(service)
+        reported = boto3.Session(profile_name=profile).get_available_regions(service, partition_name=partition)
         if set(reported) == set(guessed):
             print(service, 'guessed.')
         if set(guessed) - set(reported):

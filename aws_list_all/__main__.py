@@ -91,6 +91,7 @@ def main():
     query.add_argument('-d', '--directory', default='.', help='Directory to save result listings to')
     query.add_argument('-v', '--verbose', action='count', help='Print detailed info during run')
     query.add_argument('-c', '--profile', default=os.environ.get('AWS_PROFILE'), help='Use a specific .aws/credentials profile.')
+    query.add_argument('--partition', default='aws', help='specify a non-standard AWS partition (e.g. aws-us-gov)')
 
     # Once you have queried, show is the next most important command. So it comes second
     show = subparsers.add_parser(
@@ -111,16 +112,22 @@ def main():
         metavar='DETAIL'
     )
 
-    introspecters.add_parser(
+    list_services = introspecters.add_parser(
         'list-services',
         description='Lists short names of AWS services that the current boto3 version has clients for.',
         help='List available AWS services'
     )
-    introspecters.add_parser(
+    list_services.add_argument('-c', '--profile', default=os.environ.get('AWS_PROFILE'), help='Use a specific .aws/credentials profile.')
+    list_services.add_argument('--partition', default='aws', help='specify a non-standard AWS partition (e.g. aws-us-gov)')
+
+    list_service_regions = introspecters.add_parser(
         'list-service-regions',
         description='Lists regions where AWS services are said to be available.',
         help='List AWS service regions'
     )
+    list_service_regions.add_argument('-c', '--profile', default=os.environ.get('AWS_PROFILE'), help='Use a specific .aws/credentials profile.')
+    list_service_regions.add_argument('--partition', default='aws', help='specify a non-standard AWS partition (e.g. aws-us-gov)')
+
     ops = introspecters.add_parser(
         'list-operations',
         description='List all discovered listing operations on all (or specified) services',
@@ -132,6 +139,9 @@ def main():
         action='append',
         help='Only list discovered operations of the given service (can be specified multiple times)'
     )
+    ops.add_argument('-c', '--profile', default=os.environ.get('AWS_PROFILE'), help='Use a specific .aws/credentials profile.')
+    ops.add_argument('--partition', default='aws', help='specify a non-standard AWS partition (e.g. aws-us-gov)')
+
     introspecters.add_parser('debug', description='Debug information', help='Debug information')
 
     # Finally, refreshing the service/region caches comes last.
@@ -153,6 +163,8 @@ def main():
             'Use this only if you run a copy from git.'
         )
     )
+    caches.add_argument('-c', '--profile', default=os.environ.get('AWS_PROFILE'), help='Use a specific .aws/credentials profile.')
+    caches.add_argument('--partition', default='aws', help='specify a non-standard AWS partition (e.g. aws-us-gov)')
 
     args = parser.parse_args()
 
@@ -185,7 +197,7 @@ def main():
             for service in get_services():
                 print(service)
         elif args.introspect == 'list-service-regions':
-            introspect_regions_for_service()
+            introspect_regions_for_service(partition=args.partition, profile=args.profile)
             return 0
         elif args.introspect == 'list-operations':
             for service in args.service or get_services():
@@ -200,7 +212,7 @@ def main():
             return 1
     elif args.command == 'recreate-caches':
         increase_limit_nofiles()
-        recreate_caches(args.update_packaged_values)
+        recreate_caches(args.update_packaged_values, partition=args.partition, profile=args.profile)
     else:
         parser.print_help()
         return 1
